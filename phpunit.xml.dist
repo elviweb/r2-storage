@@ -10,7 +10,7 @@
         <testsuite name="unit">
             <directory>tests/Unit</directory>
         </testsuite>
-        <!-- Needs an S3-compatible server: docker compose up -d (MinIO), then R2_TEST_ENDPOINT etc. (see README). Skipped otherwise. -->
+        <!-- Needs an S3-compatible server: docker compose up -d (VersityGW), then R2_TEST_ENDPOINT etc. (see README). Skipped otherwise. -->
         <testsuite name="integration">
             <directory>tests/Integration</directory>
         </testsuite>

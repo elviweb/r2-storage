@@ -14,7 +14,7 @@ use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Against a real S3-compatible server (MinIO from compose.yaml, or an R2 test bucket):
+ * Against a real S3-compatible server (VersityGW from compose.yaml, or an R2 test bucket):
  *   docker compose up -d
  *   R2_TEST_ENDPOINT=http://127.0.0.1:19000 R2_TEST_ACCESS_KEY_ID=r2-storage-test \
  *   R2_TEST_SECRET_ACCESS_KEY=r2-storage-test-secret R2_TEST_REGION=us-east-1 vendor/bin/phpunit --testsuite integration

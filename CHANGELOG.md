@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.2 (unreleased)
+## Unreleased
+
+- Integration tests (compose.yaml, CI) use VersityGW: MinIO no longer publishes Docker images.
+
+## 0.1.2
 
 - Endpoint with an unparsable port no longer produces a wrong `Host` header.
 - Retry pauses are always whole microseconds; retry loop simplified.

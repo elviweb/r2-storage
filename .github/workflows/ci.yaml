@@ -1,4 +1,4 @@
-# composer qa on the current PHP, then the tests (unit + MinIO integration) on every supported
+# composer qa on the current PHP, then the tests (unit + integration against VersityGW) on every supported
 # PHP version, with the newest dependencies and, on PHP 8.1, the oldest ones composer.json allows.
 name: CI
 
@@ -16,7 +16,7 @@ jobs:
     name: QA (CS, PHPStan, Psalm, unit tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
@@ -39,7 +39,7 @@ jobs:
           - { php: '8.4', dependencies: highest }
           - { php: '8.5', dependencies: highest }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -48,13 +48,14 @@ jobs:
       # The analysis tools need newer PHP versions than the library itself; the qa job runs them.
       - run: composer remove --dev --no-update --no-interaction friendsofphp/php-cs-fixer phpstan/phpstan vimeo/psalm
       - run: composer update --no-interaction --no-progress ${{ matrix.dependencies == 'lowest' && '--prefer-lowest --prefer-stable' || '' }}
-      - name: Start MinIO (S3-compatible, stands in for R2)
+      - name: Start VersityGW (S3-compatible, stands in for R2)
         run: |
-          docker run -d --name minio -p 127.0.0.1:19000:9000 \
-            -e MINIO_ROOT_USER=r2-storage-test -e MINIO_ROOT_PASSWORD=r2-storage-test-secret \
-            quay.io/minio/minio:latest server /data
-          for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:19000/minio/health/live && exit 0; sleep 1; done
-          docker logs minio; exit 1
+          docker run -d --name s3 -p 127.0.0.1:19000:7070 \
+            -e ROOT_ACCESS_KEY=r2-storage-test -e ROOT_SECRET_KEY=r2-storage-test-secret \
+            versity/versitygw:v1.9.0 posix /tmp
+          # Up once it answers at all (403 to an unsigned request).
+          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:19000/ && exit 0; sleep 1; done
+          docker logs s3; exit 1
       - run: vendor/bin/phpunit
         env:
           R2_TEST_ENDPOINT: http://127.0.0.1:19000
