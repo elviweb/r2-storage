@@ -17,7 +17,8 @@
         "friendsofphp/php-cs-fixer": "^3.64",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^10.5 || ^11.5 || ^12.0",
-        "symfony/http-client": "^6.4 || ^7.0 || ^8.0"
+        "symfony/http-client": "^6.4 || ^7.0 || ^8.0",
+        "vimeo/psalm": "^6.19"
     },
     "suggest": {
         "symfony/http-client": "The HTTP client the R2 client sends its requests with"
@@ -32,7 +33,8 @@
         "test": "phpunit",
         "cs": "php-cs-fixer fix --dry-run --diff",
         "phpstan": "phpstan analyse --memory-limit=1G",
-        "qa": ["@cs", "@phpstan", "@test"]
+        "psalm": "psalm --no-progress",
+        "qa": ["@cs", "@phpstan", "@psalm", "@test"]
     },
     "config": {
         "sort-packages": true

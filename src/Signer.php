@@ -85,7 +85,7 @@ final class Signer
         return self::canonicalQuery($query);
     }
 
-    /** @param array<string, string> $query */
+    /** @param array<array-key, string> $query numeric names arrive as int keys */
     public static function canonicalQuery(array $query): string
     {
         $pairs = [];

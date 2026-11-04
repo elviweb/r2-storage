@@ -60,6 +60,8 @@ final class BundleTest extends TestCase
         // Checked before compiling: unused private aliases are removed then (apps use them first).
         $container = new ContainerBuilder();
         $container->setParameter('kernel.project_dir', sys_get_temp_dir());
+        $container->setParameter('kernel.environment', 'test'); // both read by the extension on Symfony 6.4
+        $container->setParameter('kernel.build_dir', sys_get_temp_dir());
         $extension = (new ElviwebR2StorageBundle())->getContainerExtension();
         \assert(null !== $extension);
         $extension->load([['storages' => ['public' => ['driver' => 'local'], 'private' => ['driver' => 'r2', 'bucket' => 'site-private']]]], $container);

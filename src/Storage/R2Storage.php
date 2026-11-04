@@ -22,6 +22,7 @@ final class R2Storage implements StorageInterface
         $this->publicUrl = null !== $publicUrl && '' !== trim($publicUrl) ? rtrim(trim($publicUrl), '/') : null;
     }
 
+    #[\Override]
     public function store(string $sourcePath, string $key, ?StoreOptions $options = null): StoredFile
     {
         Key::assertValid($key);
@@ -38,12 +39,14 @@ final class R2Storage implements StorageInterface
         return new StoredFile('r2', $key, (int) filesize($sourcePath), $contentType, $this->bucket, null !== $this->publicUrl ? $this->publicUrl.'/'.Key::encode($key) : null);
     }
 
+    #[\Override]
     public function delete(string $key): void
     {
         Key::assertValid($key);
         $this->client->delete($this->bucket, $key);
     }
 
+    #[\Override]
     public function exists(string $key): bool
     {
         Key::assertValid($key);
@@ -51,6 +54,7 @@ final class R2Storage implements StorageInterface
         return $this->client->exists($this->bucket, $key);
     }
 
+    #[\Override]
     public function url(string $key, int $expiresIn = 300): string
     {
         Key::assertValid($key);
@@ -58,6 +62,7 @@ final class R2Storage implements StorageInterface
         return null !== $this->publicUrl ? $this->publicUrl.'/'.Key::encode($key) : $this->client->presignedGetUrl($this->bucket, $key, $expiresIn);
     }
 
+    #[\Override]
     public function driver(): string
     {
         return 'r2';

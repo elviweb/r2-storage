@@ -193,27 +193,33 @@ final class R2Client
             try {
                 $response = $this->http->request($method, $url, $options);
                 $status = $response->getStatusCode();
+                if (($status >= 500 || 429 === $status) && $attempt < $this->retries) {
+                    usleep(200_000 << $attempt);
+                    continue;
+                }
+                if (($status >= 200 && $status < 300) || \in_array($status, $accept, true)) {
+                    return $response;
+                }
+
+                throw self::error($method, $path, $status, 'HEAD' === $method ? '' : $response->getContent(false));
             } catch (TransportExceptionInterface $e) {
                 if ($attempt < $this->retries) {
-                    usleep(200_000 * (2 ** $attempt));
+                    usleep(200_000 << $attempt);
                     continue;
                 }
                 throw new R2Exception(sprintf('R2 %s %s failed: %s', $method, $path, $e->getMessage()), 0, null, $e);
             }
-            if (($status >= 500 || 429 === $status) && $attempt < $this->retries) {
-                usleep(200_000 * (2 ** $attempt));
-                continue;
-            }
-            if (($status >= 200 && $status < 300) || \in_array($status, $accept, true)) {
-                return $response;
-            }
-
-            $content = 'HEAD' === $method ? '' : $response->getContent(false);
-            $error = '' !== $content && str_starts_with(ltrim($content), '<') ? self::xml($content) : null;
-            $code = null !== $error ? (string) ($error->Code ?? '') : '';
-            $message = null !== $error ? (string) ($error->Message ?? '') : '';
-            throw new R2Exception(sprintf('R2 %s %s failed with status %d%s.', $method, $path, $status, '' !== $code ? " ({$code}: {$message})" : ''), $status, '' !== $code ? $code : null);
         }
+    }
+
+    /** The exception for an error answer, with R2's error code and message when the body has them. */
+    private static function error(string $method, string $path, int $status, string $content): R2Exception
+    {
+        $error = '' !== $content && str_starts_with(ltrim($content), '<') ? self::xml($content) : null;
+        $code = null !== $error ? (string) ($error->Code ?? '') : '';
+        $message = null !== $error ? (string) ($error->Message ?? '') : '';
+
+        return new R2Exception(sprintf('R2 %s %s failed with status %d%s.', $method, $path, $status, '' !== $code ? " ({$code}: {$message})" : ''), $status, '' !== $code ? $code : null);
     }
 
     private static function assertKey(string $bucket, string $key): void

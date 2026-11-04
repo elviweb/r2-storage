@@ -6,6 +6,7 @@ namespace Elviweb\R2Storage;
 
 use Elviweb\R2Storage\Storage\StorageFactory;
 use Elviweb\R2Storage\Storage\StorageInterface;
+use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -30,44 +31,50 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *
  * Then inject StorageInterface (the default storage) or StorageInterface $publicStorage
  * (by name), and R2Client for presigned upload links.
+ *
+ * Extends HttpKernel's AbstractBundle, which works on Symfony 6.4 to 8.x; Symfony 8.1 marks its
+ * BundleInterface deprecated in favour of DependencyInjection\Kernel, which 6.4 and 7.x don't have.
+ *
+ * @psalm-suppress DeprecatedInterface
  */
 final class ElviwebR2StorageBundle extends AbstractBundle
 {
     protected string $extensionAlias = 'elviweb_r2_storage';
 
+    #[\Override]
     public function configure(DefinitionConfigurator $definition): void
     {
-        $definition->rootNode()
-            ->children()
-                ->arrayNode('r2')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->scalarNode('endpoint')->defaultValue('')->info('https://<account-id>.r2.cloudflarestorage.com')->end()
-                        ->scalarNode('access_key_id')->defaultValue('')->end()
-                        ->scalarNode('secret_access_key')->defaultValue('')->end()
-                        ->scalarNode('region')->defaultValue('auto')->end()
-                        ->integerNode('retries')->defaultValue(2)->min(0)->max(5)->end()
-                    ->end()
-                ->end()
-                ->scalarNode('default_storage')->defaultNull()->info('Name of the storage injected as StorageInterface (default: the first one)')->end()
-                ->arrayNode('storages')
-                    ->useAttributeAsKey('name')
-                    ->arrayPrototype()
-                        ->children()
-                            ->scalarNode('driver')->defaultValue('local')->info('local or r2 (may come from an env var)')->end()
-                            ->scalarNode('bucket')->defaultValue('')->end()
-                            ->scalarNode('public_url')->defaultNull()->info('Public bucket address (custom domain); empty: private, links are presigned')->end()
-                            ->scalarNode('directory')->defaultValue('%kernel.project_dir%/public/uploads')->end()
-                            ->scalarNode('local_url')->defaultValue('/uploads')->end()
-                        ->end()
-                    ->end()
-                ->end()
-            ->end();
+        // Built without ->end() so every step keeps its type for static analysis.
+        /** @var ArrayNodeDefinition $root the root of an "array" tree (the default) */
+        $root = $definition->rootNode();
+        $options = $root->children();
+
+        $r2 = $options->arrayNode('r2')->addDefaultsIfNotSet()->children();
+        $r2->scalarNode('endpoint')->defaultValue('')->info('https://<account-id>.r2.cloudflarestorage.com');
+        $r2->scalarNode('access_key_id')->defaultValue('');
+        $r2->scalarNode('secret_access_key')->defaultValue('');
+        $r2->scalarNode('region')->defaultValue('auto');
+        $r2->integerNode('retries')->defaultValue(2)->min(0)->max(5);
+
+        $options->scalarNode('default_storage')->defaultNull()->info('Name of the storage injected as StorageInterface (default: the first one)');
+
+        $storage = $options->arrayNode('storages')->useAttributeAsKey('name')->arrayPrototype()->children();
+        $storage->scalarNode('driver')->defaultValue('local')->info('local or r2 (may come from an env var)');
+        $storage->scalarNode('bucket')->defaultValue('');
+        $storage->scalarNode('public_url')->defaultNull()->info('Public bucket address (custom domain); empty: private, links are presigned');
+        $storage->scalarNode('directory')->defaultValue('%kernel.project_dir%/public/uploads');
+        $storage->scalarNode('local_url')->defaultValue('/uploads');
     }
 
     /**
+     * Symfony has already validated $config against configure(), hence the precise shape; the
+     * parameter names differ between Symfony versions, so they can't match all of them.
+     *
+     * @psalm-suppress MoreSpecificImplementedParamType, ParamNameMismatch
+     *
      * @param array{r2: array{endpoint: string, access_key_id: string, secret_access_key: string, region: string, retries: int}, default_storage: ?string, storages: array<string, array{driver: string, bucket: string, public_url: ?string, directory: string, local_url: string}>} $config
      */
+    #[\Override]
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
         $services = $container->services();

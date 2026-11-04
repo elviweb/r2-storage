@@ -84,7 +84,7 @@ $storage = new R2Storage($client, 'my-bucket', 'https://media.example.com');
 
 ```sh
 composer install
-composer qa                 # php-cs-fixer, PHPStan (max), unit tests
+composer qa                 # php-cs-fixer, PHPStan (max), Psalm (level 1), unit tests
 docker compose up -d        # MinIO, an S3-compatible server, for the integration tests
 R2_TEST_ENDPOINT=http://127.0.0.1:19000 R2_TEST_ACCESS_KEY_ID=r2-storage-test \
 R2_TEST_SECRET_ACCESS_KEY=r2-storage-test-secret R2_TEST_REGION=us-east-1 \
@@ -93,6 +93,9 @@ vendor/bin/phpunit --testsuite integration
 
 To run the integration tests against a real R2 test bucket instead: `R2_TEST_ENDPOINT` = the
 account endpoint, `R2_TEST_REGION=auto`, `R2_TEST_BUCKET` = an existing, empty test bucket.
+
+GitHub Actions (`.github/workflows/ci.yaml`) runs `composer qa` on each push and pull request, and
+the unit and MinIO tests on PHP 8.1 to 8.5 (on 8.1 also with the oldest allowed dependencies).
 
 Releases follow semantic versioning (Git tags `v0.1.0`…); see `CHANGELOG.md`. Packagist picks up new tags through the GitHub hook.
 

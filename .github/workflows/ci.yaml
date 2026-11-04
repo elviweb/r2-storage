@@ -1,0 +1,63 @@
+# composer qa on the current PHP, then the tests (unit + MinIO integration) on every supported
+# PHP version, with the newest dependencies and, on PHP 8.1, the oldest ones composer.json allows.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    name: QA (CS, PHPStan, Psalm, unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: fileinfo, simplexml
+          coverage: none
+      - run: composer update --no-interaction --no-progress
+      - run: composer qa
+
+  tests:
+    name: Tests, PHP ${{ matrix.php }} (${{ matrix.dependencies }} dependencies)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.1', dependencies: lowest }
+          - { php: '8.1', dependencies: highest }
+          - { php: '8.2', dependencies: highest }
+          - { php: '8.3', dependencies: highest }
+          - { php: '8.4', dependencies: highest }
+          - { php: '8.5', dependencies: highest }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: fileinfo, simplexml
+          coverage: none
+      # The analysis tools need newer PHP versions than the library itself; the qa job runs them.
+      - run: composer remove --dev --no-update --no-interaction friendsofphp/php-cs-fixer phpstan/phpstan vimeo/psalm
+      - run: composer update --no-interaction --no-progress ${{ matrix.dependencies == 'lowest' && '--prefer-lowest --prefer-stable' || '' }}
+      - name: Start MinIO (S3-compatible, stands in for R2)
+        run: |
+          docker run -d --name minio -p 127.0.0.1:19000:9000 \
+            -e MINIO_ROOT_USER=r2-storage-test -e MINIO_ROOT_PASSWORD=r2-storage-test-secret \
+            quay.io/minio/minio:latest server /data
+          for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:19000/minio/health/live && exit 0; sleep 1; done
+          docker logs minio; exit 1
+      - run: vendor/bin/phpunit
+        env:
+          R2_TEST_ENDPOINT: http://127.0.0.1:19000
+          R2_TEST_ACCESS_KEY_ID: r2-storage-test
+          R2_TEST_SECRET_ACCESS_KEY: r2-storage-test-secret
+          R2_TEST_REGION: us-east-1

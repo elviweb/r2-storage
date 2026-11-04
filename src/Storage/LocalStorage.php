@@ -23,6 +23,7 @@ final class LocalStorage implements StorageInterface
         $this->publicUrl = rtrim($publicUrl, '/');
     }
 
+    #[\Override]
     public function store(string $sourcePath, string $key, ?StoreOptions $options = null): StoredFile
     {
         Key::assertValid($key);
@@ -41,6 +42,7 @@ final class LocalStorage implements StorageInterface
         return new StoredFile('local', $key, (int) filesize($target), $options->contentType ?? ContentType::detect($target), null, $this->url($key));
     }
 
+    #[\Override]
     public function delete(string $key): void
     {
         Key::assertValid($key);
@@ -50,6 +52,7 @@ final class LocalStorage implements StorageInterface
         }
     }
 
+    #[\Override]
     public function exists(string $key): bool
     {
         Key::assertValid($key);
@@ -57,6 +60,7 @@ final class LocalStorage implements StorageInterface
         return is_file($this->path($key));
     }
 
+    #[\Override]
     public function url(string $key, int $expiresIn = 300): string
     {
         Key::assertValid($key);
@@ -64,6 +68,7 @@ final class LocalStorage implements StorageInterface
         return $this->publicUrl.'/'.Key::encode($key);
     }
 
+    #[\Override]
     public function driver(): string
     {
         return 'local';

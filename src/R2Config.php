@@ -53,6 +53,6 @@ final class R2Config
         $host = (string) parse_url($this->endpoint, \PHP_URL_HOST);
         $port = parse_url($this->endpoint, \PHP_URL_PORT);
 
-        return null === $port ? $host : $host.':'.$port;
+        return \is_int($port) ? $host.':'.$port : $host;
     }
 }
