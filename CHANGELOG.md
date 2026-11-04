@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 0.1.1 (unreleased)
+
+- MIT license.
+
+## 0.1.0
 
 - R2 client (S3 API, Signature V4 without the AWS SDK): upload (multipart above 64 MiB),
   upload a string, delete, exists, presigned GET and PUT links, retries.

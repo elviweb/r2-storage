@@ -12,17 +12,13 @@ The same interface stores files on local disk in development, so switching is a 
 
 ## Install
 
-The package is private: add its Git repository to the project's `composer.json`, then require it.
-
-```json
-"repositories": [{ "type": "vcs", "url": "git@<host>:elviweb/r2-storage.git" }]
-```
+From [Packagist](https://packagist.org/packages/elviweb/r2-storage):
 
 ```sh
 composer require elviweb/r2-storage symfony/http-client
 ```
 
-(While developing it next to a project: `{ "type": "path", "url": "../r2-storage" }`.)
+(To work on the library next to a project, add `{ "type": "path", "url": "../r2-storage" }` to that project's `repositories` for a while.)
 
 ## Symfony
 
@@ -98,4 +94,8 @@ vendor/bin/phpunit --testsuite integration
 To run the integration tests against a real R2 test bucket instead: `R2_TEST_ENDPOINT` = the
 account endpoint, `R2_TEST_REGION=auto`, `R2_TEST_BUCKET` = an existing, empty test bucket.
 
-Releases follow semantic versioning (Git tags `v1.0.0`…); see `CHANGELOG.md`.
+Releases follow semantic versioning (Git tags `v0.1.0`…); see `CHANGELOG.md`. Packagist picks up new tags through the GitHub hook.
+
+## License
+
+MIT, see `LICENSE`.
