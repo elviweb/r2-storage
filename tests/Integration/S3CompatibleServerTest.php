@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Elviweb\R2Storage\Tests\Integration;
 
+use Elviweb\R2Storage\ContentDisposition;
 use Elviweb\R2Storage\R2Client;
 use Elviweb\R2Storage\R2Config;
 use Elviweb\R2Storage\Signer;
+use Elviweb\R2Storage\Storage\FileNotFoundException;
 use Elviweb\R2Storage\Storage\R2Storage;
 use Elviweb\R2Storage\Storage\StoreOptions;
 use PHPUnit\Framework\TestCase;
@@ -125,5 +127,95 @@ final class S3CompatibleServerTest extends TestCase
         $download = $this->http->request('GET', $client->presignedGetUrl($this->bucket, 'big/recording.bin', 120));
         self::assertSame(hash_file('sha256', $src), hash('sha256', $download->getContent()));
         $client->delete($this->bucket, 'big/recording.bin');
+    }
+
+    public function testBrowserMultipartUploadThroughPresignedPartLinks(): void
+    {
+        $storage = new R2Storage(new R2Client($this->http, $this->config), $this->bucket);
+        $src = $this->file(5 * 1024 * 1024 + 1000); // a 5 MiB part (the minimum) and a last, small one
+        $contents = (string) file_get_contents($src);
+
+        $uploadId = $storage->startUpload('in/film.bin', new StoreOptions('video/mp4'));
+        foreach ([1 => substr($contents, 0, 5 * 1024 * 1024), 2 => substr($contents, 5 * 1024 * 1024)] as $number => $part) {
+            // as a browser does: a plain PUT, no credentials
+            $response = $this->http->request('PUT', $storage->uploadPartUrl('in/film.bin', $uploadId, $number, 300), ['body' => $part]);
+            self::assertSame(200, $response->getStatusCode());
+        }
+        $parts = $storage->client()->listParts($this->bucket, 'in/film.bin', $uploadId);
+        self::assertSame([1, 2], array_keys($parts));
+        $storage->completeUpload('in/film.bin', $uploadId);
+
+        self::assertSame(\strlen($contents), $storage->size('in/film.bin'));
+        self::assertSame(substr($contents, 0, 4096), $storage->firstBytes('in/film.bin'));
+        self::assertSame(substr($contents, 100, 50), $storage->client()->get($this->bucket, 'in/film.bin', 'bytes=100-149'));
+        $stream = $storage->readStream('in/film.bin');
+        self::assertSame(hash('sha256', $contents), hash('sha256', (string) stream_get_contents($stream)));
+        fclose($stream);
+
+        $download = $this->http->request('GET', $storage->downloadUrl('in/film.bin', 'Leçon 1.mp4', 120));
+        self::assertSame(200, $download->getStatusCode());
+        self::assertSame(ContentDisposition::attachment('Leçon 1.mp4'), $download->getHeaders()['content-disposition'][0]);
+        self::assertSame('video/mp4', $download->getHeaders()['content-type'][0]);
+
+        $storage->delete('in/film.bin');
+        self::assertNull($storage->size('in/film.bin'));
+    }
+
+    public function testAbortedUploadAndMissingFiles(): void
+    {
+        $storage = new R2Storage(new R2Client($this->http, $this->config), $this->bucket);
+        $uploadId = $storage->startUpload('in/dropped.bin');
+        $this->http->request('PUT', $storage->uploadPartUrl('in/dropped.bin', $uploadId, 1), ['body' => 'part'])->getStatusCode();
+        $storage->abortUpload('in/dropped.bin', $uploadId);
+        $storage->abortUpload('in/dropped.bin', $uploadId); // already gone: fine
+        self::assertFalse($storage->exists('in/dropped.bin'));
+
+        try {
+            $storage->read('in/dropped.bin');
+            self::fail('expected a FileNotFoundException');
+        } catch (FileNotFoundException) {
+            $this->addToAssertionCount(1);
+        }
+        $this->expectException(FileNotFoundException::class);
+        $storage->readStream('in/dropped.bin');
+    }
+
+    public function testPutListAndDeletePrefix(): void
+    {
+        $client = new R2Client($this->http, $this->config);
+        $storage = new R2Storage($client, $this->bucket);
+        $storage->put('videos/7/hls/master.m3u8', "#EXTM3U\n", new StoreOptions('application/vnd.apple.mpegurl'));
+        $stream = fopen('php://temp', 'w+');
+        \assert(false !== $stream);
+        fwrite($stream, str_repeat('ts', 1000));
+        self::assertSame(2000, $storage->put('videos/7/hls/v0/seg_0.ts', $stream, new StoreOptions('video/mp2t'))->size);
+        fclose($stream);
+        $storage->put('videos/70/other.ts', 'x');
+
+        self::assertSame("#EXTM3U\n", $storage->read('videos/7/hls/master.m3u8'));
+        self::assertSame(['videos/7/hls/master.m3u8', 'videos/7/hls/v0/seg_0.ts'], iterator_to_array($client->listKeys($this->bucket, 'videos/7/'), false));
+        self::assertSame(2, $storage->deletePrefix('videos/7/'));
+        self::assertSame([], iterator_to_array($client->listKeys($this->bucket, 'videos/7/'), false));
+        self::assertSame(['videos/70/other.ts'], iterator_to_array($client->listKeys($this->bucket, 'videos/'), false));
+        self::assertSame(1, $storage->deletePrefix('videos/'));
+    }
+
+    public function testLinksForAPresignEndpoint(): void
+    {
+        // The app reaches the server at 127.0.0.1, "browsers" at localhost: links are signed for the latter.
+        if ('127.0.0.1' !== parse_url($this->config->endpoint, \PHP_URL_HOST)) {
+            self::markTestSkipped('Needs an endpoint on 127.0.0.1 (the local VersityGW).');
+        }
+        $browser = str_replace('://127.0.0.1', '://localhost', $this->config->endpoint);
+        $config = new R2Config($this->config->endpoint, $this->config->accessKeyId, $this->config->secretAccessKey, $this->config->region, $browser);
+        $client = new R2Client($this->http, $config);
+        $client->putContents($this->bucket, 'docs/a.txt', 'for the browser', 'text/plain');
+
+        $url = $client->presignedGetUrl($this->bucket, 'docs/a.txt', 120);
+        self::assertStringStartsWith($browser.'/', $url);
+        self::assertSame('for the browser', $this->http->request('GET', $url)->getContent());
+        // the same link at the other address isn't valid: the host is signed
+        self::assertSame(403, $this->http->request('GET', str_replace($browser, $this->config->endpoint, $url))->getStatusCode());
+        $client->delete($this->bucket, 'docs/a.txt');
     }
 }

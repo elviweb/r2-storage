@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Elviweb\R2Storage;
 
+use Elviweb\R2Storage\Storage\DirectUploads;
 use Elviweb\R2Storage\Storage\StorageFactory;
 use Elviweb\R2Storage\Storage\StorageInterface;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
@@ -22,15 +23,17 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
  *             endpoint: '%env(R2_ENDPOINT)%'
  *             access_key_id: '%env(R2_ACCESS_KEY_ID)%'
  *             secret_access_key: '%env(R2_SECRET_ACCESS_KEY)%'
+ *             presign_endpoint: '%env(default::R2_PRESIGN_ENDPOINT)%'   # optional, browser-facing address
  *         storages:
  *             public:
- *                 driver: '%env(STORAGE_DRIVER)%'   # local | r2
+ *                 driver: '%env(STORAGE_DRIVER)%'   # local | memory | r2
  *                 bucket: '%env(R2_PUBLIC_BUCKET)%'
  *                 public_url: '%env(R2_PUBLIC_URL)%'
  *                 directory: '%kernel.project_dir%/public/uploads'
  *
  * Then inject StorageInterface (the default storage) or StorageInterface $publicStorage
- * (by name), and R2Client for presigned upload links.
+ * (by name), DirectUploads $privateStorage for browser multipart uploads to an r2 storage, and
+ * R2Client for anything else.
  *
  * Extends HttpKernel's AbstractBundle, which works on Symfony 6.4 to 8.x; Symfony 8.1 marks its
  * BundleInterface deprecated in favour of DependencyInjection\Kernel, which 6.4 and 7.x don't have.
@@ -53,13 +56,14 @@ final class ElviwebR2StorageBundle extends AbstractBundle
         $r2->scalarNode('endpoint')->defaultValue('')->info('https://<account-id>.r2.cloudflarestorage.com');
         $r2->scalarNode('access_key_id')->defaultValue('');
         $r2->scalarNode('secret_access_key')->defaultValue('');
-        $r2->scalarNode('region')->defaultValue('auto');
+        $r2->scalarNode('region')->defaultValue('auto')->info('auto for R2; us-east-1 for MinIO or VersityGW');
+        $r2->scalarNode('presign_endpoint')->defaultValue('')->info('Address browsers reach, for presigned links, when not the endpoint (e.g. http://s3.app.local while the app uses http://minio:9000)');
         $r2->integerNode('retries')->defaultValue(2)->min(0)->max(5);
 
         $options->scalarNode('default_storage')->defaultNull()->info('Name of the storage injected as StorageInterface (default: the first one)');
 
         $storage = $options->arrayNode('storages')->useAttributeAsKey('name')->arrayPrototype()->children();
-        $storage->scalarNode('driver')->defaultValue('local')->info('local or r2 (may come from an env var)');
+        $storage->scalarNode('driver')->defaultValue('local')->info('local, memory (tests) or r2 (may come from an env var)');
         $storage->scalarNode('bucket')->defaultValue('');
         $storage->scalarNode('public_url')->defaultNull()->info('Public bucket address (custom domain); empty: private, links are presigned');
         $storage->scalarNode('directory')->defaultValue('%kernel.project_dir%/public/uploads');
@@ -72,7 +76,7 @@ final class ElviwebR2StorageBundle extends AbstractBundle
      *
      * @psalm-suppress MoreSpecificImplementedParamType, ParamNameMismatch
      *
-     * @param array{r2: array{endpoint: string, access_key_id: string, secret_access_key: string, region: string, retries: int}, default_storage: ?string, storages: array<string, array{driver: string, bucket: string, public_url: ?string, directory: string, local_url: string}>} $config
+     * @param array{r2: array{endpoint: string, access_key_id: string, secret_access_key: string, region: string, presign_endpoint: ?string, retries: int}, default_storage: ?string, storages: array<string, array{driver: string, bucket: string, public_url: ?string, directory: string, local_url: string}>} $config
      */
     #[\Override]
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
@@ -80,7 +84,7 @@ final class ElviwebR2StorageBundle extends AbstractBundle
         $services = $container->services();
 
         $services->set('elviweb_r2_storage.config', R2Config::class)
-            ->args([$config['r2']['endpoint'], $config['r2']['access_key_id'], $config['r2']['secret_access_key'], $config['r2']['region']]);
+            ->args([$config['r2']['endpoint'], $config['r2']['access_key_id'], $config['r2']['secret_access_key'], $config['r2']['region'], $config['r2']['presign_endpoint']]);
         $services->set('elviweb_r2_storage.client', R2Client::class)
             ->args([service('http_client'), service('elviweb_r2_storage.config'), null, $config['r2']['retries']]);
         $services->alias(R2Client::class, 'elviweb_r2_storage.client');
@@ -96,6 +100,14 @@ final class ElviwebR2StorageBundle extends AbstractBundle
                 ->args([$storage['driver'], service('elviweb_r2_storage.client'), $storage['bucket'], $storage['public_url'], $storage['directory'], $storage['local_url']])
                 ->public();
             $builder->registerAliasForArgument($id, StorageInterface::class, $name.'Storage');
+
+            // The same storage as DirectUploads; the driver is only known at runtime (env
+            // variable), so a non-r2 one fails when a service asking for it is built.
+            $services->set($id.'.direct_uploads', DirectUploads::class)
+                ->factory([StorageFactory::class, 'directUploads'])
+                ->args([service($id), $name])
+                ->public();
+            $builder->registerAliasForArgument($id.'.direct_uploads', DirectUploads::class, $name.'Storage');
         }
         if (null !== $default) {
             $services->alias(StorageInterface::class, 'elviweb_r2_storage.storage.'.$default);

@@ -13,4 +13,12 @@ final class ContentType
 
         return \is_string($type) && '' !== $type ? $type : 'application/octet-stream';
     }
+
+    /** From the first bytes of a file (4 KiB are plenty). */
+    public static function detectBuffer(string $contents): string
+    {
+        $type = '' !== $contents ? (new \finfo(\FILEINFO_MIME_TYPE))->buffer($contents) : false;
+
+        return \is_string($type) && '' !== $type ? $type : 'application/octet-stream';
+    }
 }

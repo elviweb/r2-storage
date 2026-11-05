@@ -6,7 +6,9 @@ namespace Elviweb\R2Storage\Tests\Unit;
 
 use Elviweb\R2Storage\ElviwebR2StorageBundle;
 use Elviweb\R2Storage\R2Client;
+use Elviweb\R2Storage\Storage\DirectUploads;
 use Elviweb\R2Storage\Storage\LocalStorage;
+use Elviweb\R2Storage\Storage\MemoryStorage;
 use Elviweb\R2Storage\Storage\R2Storage;
 use Elviweb\R2Storage\Storage\StorageInterface;
 use PHPUnit\Framework\TestCase;
@@ -68,6 +70,7 @@ final class BundleTest extends TestCase
 
         self::assertSame('elviweb_r2_storage.storage.public', (string) $container->getAlias(StorageInterface::class), 'the first storage is the default');
         self::assertTrue($container->hasAlias(StorageInterface::class.' $privateStorage'), 'injectable by name');
+        self::assertTrue($container->hasAlias(DirectUploads::class.' $privateStorage'), 'direct uploads by name');
         self::assertTrue($container->hasAlias(R2Client::class));
     }
 
@@ -75,5 +78,33 @@ final class BundleTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->container(['default_storage' => 'nope', 'storages' => ['public' => ['driver' => 'local']]]);
+    }
+
+    public function testPresignEndpointMemoryDriverAndDirectUploads(): void
+    {
+        $container = $this->container([
+            'r2' => ['endpoint' => 'http://minio:9000', 'access_key_id' => 'AKID', 'secret_access_key' => 'SECRET', 'region' => 'us-east-1', 'presign_endpoint' => 'http://s3.app.local'],
+            'storages' => [
+                'private' => ['driver' => 'r2', 'bucket' => 'school-private'],
+                'test' => ['driver' => 'memory'],
+            ],
+        ]);
+        $private = $container->get('elviweb_r2_storage.storage.private');
+        self::assertInstanceOf(R2Storage::class, $private);
+        self::assertStringStartsWith('http://s3.app.local/school-private/a.pdf?', $private->url('a.pdf'), 'links for the browser-facing address');
+        self::assertSame('http://minio:9000/school-private/a.pdf', $private->client()->objectUrl('school-private', 'a.pdf'));
+        self::assertInstanceOf(MemoryStorage::class, $container->get('elviweb_r2_storage.storage.test'));
+        self::assertSame($container->get('elviweb_r2_storage.storage.private'), $container->get('elviweb_r2_storage.storage.private.direct_uploads'));
+
+        $this->expectException(\LogicException::class);
+        $container->get('elviweb_r2_storage.storage.test.direct_uploads');
+    }
+
+    public function testExistingConfigWithoutPresignEndpoint(): void
+    {
+        $container = $this->container(['r2' => ['endpoint' => 'https://acc.r2.cloudflarestorage.com', 'access_key_id' => 'AKID', 'secret_access_key' => 'SECRET'], 'storages' => ['images' => ['driver' => 'local', 'bucket' => 'imgs', 'public_url' => 'https://img.example.com', 'directory' => sys_get_temp_dir(), 'local_url' => '/img']]]);
+        $images = $container->get('elviweb_r2_storage.storage.images');
+        self::assertInstanceOf(LocalStorage::class, $images);
+        self::assertSame('/img/a.png', $images->url('a.png'));
     }
 }
